@@ -1,4 +1,4 @@
-#+TITLE: Section I: Words
+#+TITLE: I. Words
 
 * Section 2
 
@@ -8,9 +8,16 @@ Implement the deterministic recognizer for finite state automata. This is a tail
 
 #+begin_src lisp
   (defstruct (d-recognize/machine (:conc-name nil))
+    "Machine for recognizing strings in a language.
+`states' should be a list of states. `transition-table' should be a nested alist, mapping (current-state, character)
+to the singular next state. `accept-states' should be a list of states, subsetting `states', which indicate acceptance
+of an input string upon termination."
     states transition-table accept-states)
 
   (defun d-recognize (tape machine &optional current-state)
+    "Deterministic recognizer for finite state automata. `machine' is an instance of `d-recognize/machine', and
+`tape' is a string in `machine''s alphabet. Returns terminating state if `tape' is recognized by `machine', else
+returns nil."
     (let
         ((current-state (or current-state (first (states machine))))) ;; initialize state if needed
       (if (= (length tape) 0)
@@ -29,66 +36,70 @@ Implement the deterministic recognizer for finite state automata. This is a tail
 A test of =d-recognize= using the sheeptalk DFSA in figure 2.10.
 
 #+begin_src lisp
-  (let
-      ((sheeptalk-recognizer (make-d-recognize/machine
-                              :states '(0 1 2 3 4)
-                              :transition-table '((0 . ((#\b . 1)))
-                                                  (1 . ((#\a . 2)))
-                                                  (2 . ((#\a . 3)))
-                                                  (3 . ((#\a . 3)
-                                                        (#\! . 4))))
-                              :accept-states '(4))))
-    (mapcar (lambda (tape)
-                (d-recognize tape sheeptalk-recognizer))
-          '("Ba"
-            "baaa!"
-            "baa!"
-            "ba!"
-            "squirtle")))
+  (defparameter *d-sheeptalk-recognizer* (make-d-recognize/machine
+                                          :states '(0 1 2 3 4)
+                                          :transition-table '((0 . ((#\b . 1)))
+                                                              (1 . ((#\a . 2)))
+                                                              (2 . ((#\a . 3)))
+                                                              (3 . ((#\a . 3)
+                                                                    (#\! . 4))))
+                                          :accept-states '(4))
+    "A deterministic FSA for recognizing sheeptalk.")
+
+  (defparameter *sheeptalk-positive-testcases* '("baa!" "baaaaaa!" "baaaaaaaaaaaa!")
+    "A list of words in the sheeptalk language.")
+
+  (defparameter *sheeptalk-negative-testcases* '("ba!" "Baa!" "baa" "squirtle")
+    "A list of words not in the sheeptalk language.")
+
+  (defun d-sheeptalk-p (word)
+    "Is `word' legal sheeptalk? Implemented with DFSA."
+    (d-recognize word *d-sheeptalk-recognizer*))
+
+  (assert (every #'d-sheeptalk-p *sheeptalk-positive-testcases*))
+  (assert (notany #'d-sheeptalk-p *sheeptalk-negative-testcases*))
 #+end_src
 
 #+RESULTS:
-| NIL | (4) | (4) | NIL | NIL |
-
-More complex test -- define a machine to recognize the word "dig", or "dog" with any number of additional "o"s.
-
-#+begin_src lisp
-  (let
-      ((my-recognizer (make-d-recognize/machine
-                       :states '(1 2 3 4 5)
-                       :transition-table '((1 . ((#\d . 2)))
-                                           (2 . ((#\o . 3)
-                                                 (#\i . 4)))
-                                           (3 . ((#\o . 3)
-                                                 (#\g . 5)))
-                                           (4 . ((#\g . 5))))
-                       :accept-states '(5))))
-    (mapcar (lambda (str)
-              (d-recognize str my-recognizer))
-            '("ranger"
-              "dig"
-              "dog"
-              "doooooog"
-              "doig"
-              "diiig")))
-#+end_src
-
-#+RESULTS:
-| NIL | (5) | (5) | (5) | NIL | NIL |
+: NIL
 
 ** Non-Deterministic Finite State Automata
 
-This implements the pseudocode from figure 2.19.
+This implements the pseudocode from figure 2.19, with options for either breadth-first-search or depth-first-search.
 
 #+begin_src lisp
+  (defparameter *nd-recognize/print-search-order* t
+    "Whether to print out the search state each iteration. Useful for understanding breadth- versus depth-
+  first-search.")
+
   (defstruct (nd-recognize/machine (:conc-name nil))
+    "Like `d-recognize/machine', except that `transition-table' maps to a list of possible next states, rather than
+  a singular value. Additionally, alist paths of the form (current-state 'epsilon) -> next-state-list indicate 'no-cost'
+  transitions within the state machine."
     states transition-table accept-states)
 
+  (defun nd-recognize (tape machine &optional (search-strategy 'bfs))
+    "Nondeterministic recognizer for finite state automata. Like `d-recognize', but here, `machine' is an instance of
+  `nd-recognize/machine'. Additionally, search strategy may be provided as either 'bfs or 'dfs."
+    (nd-recognize/inner (list (list tape machine (first (states machine)))) search-strategy))
+
+  (defun nd-recognize/inner (agenda &optional (search-strategy 'bfs))
+    "Recursive inner loop for `nd-recognize'."
+    (assert (> (length agenda) 0))
+    (destructuring-bind (tape machine state) (car agenda)
+      (when *nd-recognize/print-search-order*
+        (format t "~A~%" (car agenda)))
+      (if (= (length tape) 0)
+          (member state (accept-states machine))
+          (let ((new-agenda (nd-recognize/update-agenda
+                             (rest agenda)
+                             (nd-recognize/generate-new-states tape machine state)
+                             search-strategy)))
+            (and (> (length new-agenda) 0)
+                 (nd-recognize/inner new-agenda))))))
+
   (defun nd-recognize/generate-new-states (tape machine state)
-    "Given a tape, machine, and state, return a list of the form:
-  '((next-state-a machine next-tape-a)
-    (next-state-b machine next-tape-b)
-    ...)"
+    "Return an 'agenda' list which represents a list of all possible 'next steps' from the current search state."
     (let*
         ((reachable-epsilon-states (cdr-nassoc (transition-table machine)
                                                (list state
@@ -103,69 +114,59 @@ This implements the pseudocode from figure 2.19.
                reachable-normal-states)
        :test #'equal)))
 
-  (defun nd-recognize (tape machine)
-    "ND-RECOGNIZE - Nondeterministic Recognizer for FSA
-  TAPE:    Remaining input string
-  MACHINE: Recognizer for some formal language
-  AGENDA:  Remaining unprocessed (tape machine state) lists"
-    (nd-recognize/inner (list (list tape machine (first (states machine))))))
-
-  (defun nd-recognize/inner (agenda)
-    (destructuring-bind (tape machine state) (car agenda)
-        (if (= (length tape) 0)
-            (member state (accept-states machine))
-          (let ((new-agenda (union (rest agenda)
-                                   (nd-recognize/generate-new-states tape machine state))))
-            (and (> (length new-agenda) 0)
-                 (nd-recognize/inner new-agenda))))))
+  (defun nd-recognize/update-agenda (current-agenda new-items &optional (search-strategy 'bfs))
+    "Return an 'agenda list' by combining the given agenda lists, according to `search-strategy'. Supported values
+  include 'bfs and 'dfs"
+    (remove-duplicates
+     (ccase search-strategy
+       (bfs (append current-agenda new-items))
+       (dfs (append (reverse new-items) current-agenda)))))
 #+end_src
 
 #+RESULTS:
-: ND-RECOGNIZE/INNER
+: ND-RECOGNIZE/UPDATE-AGENDA
 
 This tests =nd-recognize= using the NFSA from figure 2.17.
 
 #+begin_src lisp
-  (let
-        ((sheeptalk-recognizer (make-nd-recognize/machine
-                                :states '(0 1 2 3 4)
-                                :transition-table '((0 . ((#\b     . (1))))
-                                                    (1 . ((#\a     . (2))))
-                                                    (2 . ((#\a     . (2 3))))
-                                                    (3 . ((#\!     . (4)))))
-                                :accept-states '(4))))
-    (mapcar (lambda (tape)
-              (nd-recognize tape sheeptalk-recognizer))
-        '("Ba"
-          "baaa!"
-          "baa!"
-          "ba!"
-          "squirtle")))
+  (defparameter *nd-sheeptalk-recognizer-1* (make-nd-recognize/machine
+                                            :states '(0 1 2 3 4)
+                                            :transition-table '((0 . ((#\b . (1))))
+                                                                (1 . ((#\a . (2))))
+                                                                (2 . ((#\a . (2 3))))
+                                                                (3 . ((#\! . (4)))))
+                                            :accept-states '(4)))
+
+  (defun nd1-sheeptalk-p (word)
+    "Is `word' legal sheeptalk? Implemented with NFSA #1."
+    (nd-recognize word *nd-sheeptalk-recognizer-1*))
+
+  (assert (every #'nd1-sheeptalk-p *sheeptalk-positive-testcases*))
+  (assert (notany #'nd1-sheeptalk-p *sheeptalk-negative-testcases*))
 #+end_src
 
 #+RESULTS:
-| NIL | (4) | (4) | NIL | NIL |
+: NIL
 
 This tests =nd-recognize= using the epsilon NFSA from figure 2.18.
 
 #+begin_src lisp
-  (let
-        ((sheeptalk-recognizer (make-nd-recognize/machine
+  (defparameter *nd-sheeptalk-recognizer-2* (make-nd-recognize/machine
                                 :states '(0 1 2 3 4)
                                 :transition-table '((0 . ((#\b     . (1))))
                                                     (1 . ((#\a     . (2))))
                                                     (2 . ((#\a     . (3))))
                                                     (3 . ((#\!     . (4))
                                                           (epsilon . (2)))))
-                                :accept-states '(4))))
-    (mapcar (lambda (tape)
-              (nd-recognize tape sheeptalk-recognizer))
-        '("Ba"
-          "baaa!"
-          "baa!"
-          "ba!"
-          "squirtle")))
+                                :accept-states '(4)))
+
+  (defun nd2-sheeptalk-p (word)
+    "Is `word' legal sheeptalk? Implemented with NFSA #2."
+    (nd-recognize word *nd-sheeptalk-recognizer-2*))
+
+  (assert (every #'nd2-sheeptalk-p *sheeptalk-positive-testcases*))
+  (assert (notany #'nd2-sheeptalk-p *sheeptalk-negative-testcases*))
 #+end_src
 
 #+RESULTS:
-| NIL | (4) | (4) | NIL | NIL |
+: NIL

@@ -7,7 +7,11 @@ Each section is in a dedicated notebook.
 [[./util.org][Utility Code]]
 
 [[./words.org][I. Words]]
+
 II. Speech
+
 III. Syntax
+
 IV. Semantics and Pragmatics
+
 V. Applications
