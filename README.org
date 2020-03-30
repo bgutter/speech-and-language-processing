@@ -1,0 +1,13 @@
+#+TITLE: Speech and Language Processing Workbook
+
+My org-babel notebook with Common Lisp implementations of the pseudocode presented in Jurafsky and Martin's "Speech and Language Processing: An Introduction to Natural Language Processing, Computational Linguistics, and Speech Recognition".
+
+Each section is in a dedicated notebook.
+
+[[./util.org][Utility Code]]
+
+[[./words.org][I. Words]]
+II. Speech
+III. Syntax
+IV. Semantics and Pragmatics
+V. Applications

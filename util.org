@@ -1,0 +1,38 @@
+#+TITLE: Utility Functions
+
+Various utility functions used throughout the workbook.
+
+* Nested Association List Access
+
+Easily read from nested alists.
+
+#+begin_src lisp
+  (defun cdr-nassoc (alist key-list &rest assoc-args)
+    "(cdr-nassoc alist \"first\" 'second) is equal to:
+  (cdr (assoc 'second (cdr (assoc \"first\" alist))))"
+    (reduce (lambda (&optional alist key)
+              (if key
+                  (cdr (apply #'assoc key alist assoc-args))
+                alist))
+            key-list
+            :initial-value alist))
+#+end_src
+
+#+RESULTS:
+: CDR-NASSOC
+
+Test and example usage.
+
+#+begin_src lisp
+  (defparameter nested-alist
+    '(("first"  . ((#\a . 3)
+                   (#\d . 34)))
+      ("second" . ((something . "Found me")
+                   (another . "nope")))
+      ("third"  . ())))
+
+  (cdr-nassoc nested-alist '("second" something) :test #'equal)
+#+end_src
+
+#+RESULTS:
+: Found me
