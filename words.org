@@ -1,6 +1,6 @@
-#+TITLE: I. Words
+#+TITLE: Section I. Words
 
-* Section 2
+* Chapter 2 - Regular Expressions and Automata
 
 ** Deterministic Finite State Automata
 
@@ -9,14 +9,14 @@ Implement the deterministic recognizer for finite state automata. This is a tail
 #+begin_src lisp
   (defstruct (d-recognize/machine (:conc-name nil))
     "Machine for recognizing strings in a language.
-`states' should be a list of states. `transition-table' should be a nested alist, mapping (current-state, character)
-to the singular next state. `accept-states' should be a list of states, subsetting `states', which indicate acceptance
+states should be a list of states. transition-table should be a nested alist, mapping (current-state, character)
+to the singular next state. accept-states should be a list of states, subsetting states, which indicate acceptance
 of an input string upon termination."
     states transition-table accept-states)
 
   (defun d-recognize (tape machine &optional current-state)
-    "Deterministic recognizer for finite state automata. `machine' is an instance of `d-recognize/machine', and
-`tape' is a string in `machine''s alphabet. Returns terminating state if `tape' is recognized by `machine', else
+    "Deterministic recognizer for finite state automata. machine is an instance of d-recognize/machine, and
+tape is a string in machine's alphabet. Returns terminating state if tape is recognized by machine, else
 returns nil."
     (let
         ((current-state (or current-state (first (states machine))))) ;; initialize state if needed
@@ -53,7 +53,7 @@ A test of =d-recognize= using the sheeptalk DFSA in figure 2.10.
     "A list of words not in the sheeptalk language.")
 
   (defun d-sheeptalk-p (word)
-    "Is `word' legal sheeptalk? Implemented with DFSA."
+    "Is word legal sheeptalk? Implemented with DFSA."
     (d-recognize word *d-sheeptalk-recognizer*))
 
   (assert (every #'d-sheeptalk-p *sheeptalk-positive-testcases*))
@@ -73,18 +73,18 @@ This implements the pseudocode from figure 2.19, with options for either breadth
   first-search.")
 
   (defstruct (nd-recognize/machine (:conc-name nil))
-    "Like `d-recognize/machine', except that `transition-table' maps to a list of possible next states, rather than
+    "Like d-recognize/machine, except that transition-table maps to a list of possible next states, rather than
   a singular value. Additionally, alist paths of the form (current-state 'epsilon) -> next-state-list indicate 'no-cost'
   transitions within the state machine."
     states transition-table accept-states)
 
   (defun nd-recognize (tape machine &optional (search-strategy 'bfs))
-    "Nondeterministic recognizer for finite state automata. Like `d-recognize', but here, `machine' is an instance of
-  `nd-recognize/machine'. Additionally, search strategy may be provided as either 'bfs or 'dfs."
+    "Nondeterministic recognizer for finite state automata. Like d-recognize, but here, machine is an instance of
+  nd-recognize/machine. Additionally, search strategy may be provided as either 'bfs or 'dfs."
     (nd-recognize/inner (list (list tape machine (first (states machine)))) search-strategy))
 
   (defun nd-recognize/inner (agenda &optional (search-strategy 'bfs))
-    "Recursive inner loop for `nd-recognize'."
+    "Recursive inner loop for nd-recognize."
     (assert (> (length agenda) 0))
     (destructuring-bind (tape machine state) (car agenda)
       (when *nd-recognize/print-search-order*
@@ -115,7 +115,7 @@ This implements the pseudocode from figure 2.19, with options for either breadth
        :test #'equal)))
 
   (defun nd-recognize/update-agenda (current-agenda new-items &optional (search-strategy 'bfs))
-    "Return an 'agenda list' by combining the given agenda lists, according to `search-strategy'. Supported values
+    "Return an 'agenda list' by combining the given agenda lists, according to search-strategy. Supported values
   include 'bfs and 'dfs"
     (remove-duplicates
      (ccase search-strategy
@@ -138,7 +138,7 @@ This tests =nd-recognize= using the NFSA from figure 2.17.
                                             :accept-states '(4)))
 
   (defun nd1-sheeptalk-p (word)
-    "Is `word' legal sheeptalk? Implemented with NFSA #1."
+    "Is word legal sheeptalk? Implemented with NFSA #1."
     (nd-recognize word *nd-sheeptalk-recognizer-1*))
 
   (assert (every #'nd1-sheeptalk-p *sheeptalk-positive-testcases*))
@@ -161,7 +161,7 @@ This tests =nd-recognize= using the epsilon NFSA from figure 2.18.
                                 :accept-states '(4)))
 
   (defun nd2-sheeptalk-p (word)
-    "Is `word' legal sheeptalk? Implemented with NFSA #2."
+    "Is word legal sheeptalk? Implemented with NFSA #2."
     (nd-recognize word *nd-sheeptalk-recognizer-2*))
 
   (assert (every #'nd2-sheeptalk-p *sheeptalk-positive-testcases*))
@@ -170,3 +170,104 @@ This tests =nd-recognize= using the epsilon NFSA from figure 2.18.
 
 #+RESULTS:
 : NIL
+
+* Chapter 3 - Words and Transducers
+
+** Minimum Edit Distance
+
+This implements the minimum edit distance algorithm in figure 3.25. The distance table produced is transpose to what is shown in the text.
+
+#+begin_src lisp
+  (defun min-edit-distance (target source &optional insertion-cost deletion-cost substitution-cost)
+    "Calculate the edit distance between two sequences.
+  Returns two values -- the distance, and distance table."
+    (let
+        ;; Distance is a table of zeros, and the cost functions default to
+        ;; Levenshtein (1 for insertion/deletion, and 2 for swapping).
+        ((distance          (make-array (list (1+ (length target))
+                                              (1+ (length source)))
+                                        :initial-element 0))
+         (insertion-cost    (or insertion-cost (constantly 1)))
+         (deletion-cost     (or deletion-cost (constantly 1)))
+         (substitution-cost (or substitution-cost
+                                (lambda (a b)
+                                  (if (equal a b) 0 2)))))
+
+      ;; First row defines the cost of transforming the empty sequence
+      ;; into target. This is an accumulation of the insertion cost
+      ;; of each item in target.
+      (loop for row from 1 to (length target) do
+        (setf (aref distance row 0) (+ (aref distance (1- row) 0)
+                                     (funcall insertion-cost (elt target (1- row))))))
+
+      ;; First column defines the cost of transforming source into the empty
+      ;; sequence. This is an accumulation of the deletion cost for each
+      ;; item in source.
+      (loop for column from 1 to (length source) do
+        (setf (aref distance 0 column) (+ (aref distance 0 (1- column))
+                                     (funcall deletion-cost (elt source (1- column))))))
+
+      ;; Work up from our base knowledge; the cost of transforming to/from the
+      ;; empty sequence. Each cell represents the cost of transforming the
+      ;; substring source[:j] into the substring target[:i]. At the time that
+      ;; each cell i, j is calculated, we have *already solved* the subproblems
+      ;; for all j' < j and all i' < i.
+      ;;
+      ;; Capitalizing on that, the cost of transforming source[:j] into target[:i]
+      ;; -- ie, distance[i,j] -- is just the cheapest of the following options:
+      ;;
+      ;;   1. Taking the cheapest transformation of source[:j] to target[:i-1] and
+      ;;      simply appending target[i] to finish the transform.
+      ;;
+      ;;   2. Taking the cheapest transformation of source[:j-1] to target[:i] and
+      ;;      simply deleting source[j] to finish the transform.
+      ;;
+      ;;   3. Taking the cheapest transformation of source[:j-1] to target[:i-1] and
+      ;;      swapping source[j] for target[i] to finish the transform.
+      ;;
+      (loop for row from 1 to (length target) do
+           (loop for column from 1 to (length source) do
+                (setf (aref distance row column)
+                      (min
+
+                       ;; ...if we append target[i]...
+                       (+ (aref distance (1- row) column)
+                          (funcall insertion-cost (elt target (1- row))))
+
+                       ;; ...or, if we just delete source[j]...
+                       (+ (aref distance row (1- column))
+                          (funcall deletion-cost (elt source (1- column))))
+
+                       ;; ...or, if we swap source[j] with target[i]...
+                       (+ (aref distance (1- row) (1- column))
+                          (funcall substitution-cost
+                                   (elt source (1- column))
+                                   (elt target (1- row))))))))
+
+      ;; Return the final, minimum distance, and the cost table
+      (values (aref distance (length target) (length source))
+              distance)))
+#+end_src
+
+#+RESULTS:
+: MIN-EDIT-DISTANCE
+
+#+begin_src lisp :exports both
+(multiple-value-list
+  (min-edit-distance "intention" "execution"))
+#+end_src
+
+#+RESULTS:
+#+begin_example
+(8
+ #2A((0 1 2 3 4 5 6 7 8 9)
+     (1 2 3 4 5 6 7 6 7 8)
+     (2 3 4 5 6 7 8 7 8 7)
+     (3 4 5 6 7 8 7 8 9 8)
+     (4 3 4 5 6 7 8 9 10 9)
+     (5 4 5 6 7 8 9 10 11 10)
+     (6 5 6 7 8 9 8 9 10 11)
+     (7 6 7 8 9 10 9 8 9 10)
+     (8 7 8 9 10 11 10 9 8 9)
+     (9 8 9 10 11 12 11 10 9 8)))
+#+end_example
